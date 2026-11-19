@@ -1,0 +1,2 @@
+# traderai
+trade
