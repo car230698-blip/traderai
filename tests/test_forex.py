@@ -128,6 +128,37 @@ class APITests(unittest.TestCase):
         self.assertIn('Vietnamese', calls[0])
         self.assertIn('demo', calls[2])
 
+    def test_research_artifacts_and_data_provenance(self):
+        status, strategy = self.request('/api/strategies', {'name':'Test EMA', 'pair':'EUR/USD', 'params':{}})
+        self.assertEqual(status, 201)
+        self.assertEqual(self.request('/api/strategies')[1][0]['id'], strategy['id'])
+        status, result = self.request('/api/backtests', {'pair':'EUR/USD','source':'demo','params':{}})
+        self.assertEqual(status, 201)
+        self.assertEqual(result['source'], 'demo')
+        self.assertEqual(len(result['data_hash']), 64)
+        self.assertEqual(len(result['input_candles']), 120)
+        self.assertNotIn('input_candles', self.request('/api/backtests')[1][0])
+        self.assertEqual(self.request('/api/backtests/'+result['id'])[1]['metrics'], result['metrics'])
+        with self.assertRaises(HTTPError) as error:
+            self.request('/api/backtests', {'dataset_id':'missing'})
+        self.assertEqual(error.exception.code, 404)
+        error.exception.close()
+        self.request('/api/backtests/'+result['id'], method='DELETE')
+        self.assertEqual(self.request('/api/backtests')[1], [])
+
+    def test_csv_import_and_snapshot_survives_dataset_delete(self):
+        bars = market()['candles']
+        csv = 'time,open,high,low,close\n'+'\n'.join(','.join(str(c[k]) for k in ('time','open','high','low','close')) for c in bars)
+        _, dataset = self.request('/api/datasets', {'pair':'EUR/USD','name':'Imported','csv':csv})
+        _, result = self.request('/api/backtests', {'pair':'EUR/USD','dataset_id':dataset['id']})
+        self.assertEqual(result['source'], 'csv')
+        with self.assertRaises(HTTPError) as error:
+            self.request('/api/backtests', {'pair':'USD/JPY','dataset_id':dataset['id']})
+        self.assertEqual(error.exception.code, 400)
+        error.exception.close()
+        self.request('/api/datasets/'+dataset['id'], method='DELETE')
+        self.assertEqual(len(self.request('/api/backtests/'+result['id'])[1]['input_candles']),120)
+
     def test_configuration_hides_secrets(self):
         _, config = self.request('/api/config')
         self.assertNotIn('private-key', json.dumps(config))

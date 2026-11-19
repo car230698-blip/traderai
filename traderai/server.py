@@ -18,6 +18,7 @@ from .cli import DEFAULT_MODELS, KEY_NAMES, load_env
 from .forex import PAIRS, INTERVALS, market, position_size, quantitative
 from .providers import LLMClient
 from .workflow import run_workflow
+from .backtest import DEFAULTS, STRATEGIES, parse_csv, simulate, validate_params
 
 WEB = Path(__file__).parent / 'web'
 
@@ -30,6 +31,7 @@ class Workspace:
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.slots = threading.BoundedSemaphore(2)
         with self.connect() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS research (id TEXT PRIMARY KEY, kind TEXT, created TEXT, payload TEXT)')
             db.execute('CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, created TEXT, pair TEXT, status TEXT, payload TEXT)')
             for run_id, payload in db.execute("SELECT id,payload FROM runs WHERE status='running'").fetchall():
                 payload = {**json.loads(payload), 'error': 'Server đã khởi động lại. Vui lòng chạy lại phân tích.'}
@@ -44,9 +46,55 @@ class Workspace:
         finally:
             db.close()
 
+    def research_list(self, kind):
+        with self.connect() as db:
+            rows = db.execute('SELECT id,created,payload FROM research WHERE kind=? ORDER BY created DESC LIMIT 100', (kind,)).fetchall()
+        heavy = {'candles', 'input_candles', 'equity', 'trades'}
+        return [dict(id=r[0], created=r[1], **{k:v for k,v in json.loads(r[2]).items() if k not in heavy}) for r in rows]
+
+    def research_get(self, kind, item_id):
+        with self.connect() as db:
+            row = db.execute('SELECT created,payload FROM research WHERE kind=? AND id=?', (kind, item_id)).fetchone()
+        if not row:
+            raise LookupError('Không tìm thấy dữ liệu nghiên cứu.')
+        return dict(id=item_id, created=row[0], **json.loads(row[1]))
+
+    def research_create(self, kind, body):
+        pair = body.get('pair', 'EUR/USD')
+        from .forex import validate_pair
+        validate_pair(pair)
+        if kind == 'datasets':
+            candles = parse_csv(body.get('csv'))
+            payload = {'name': str(body.get('name', 'Imported OHLC'))[:100], 'pair': pair, 'source': 'csv',
+                       'candles': candles, 'bars': len(candles), 'start': candles[0]['time'], 'end': candles[-1]['time']}
+        elif kind == 'strategies':
+            payload = {'name': str(body.get('name', 'Chiến lược mới'))[:100], 'pair': pair,
+                       'params': validate_params(body.get('params', {}))}
+        else:
+            interval, source = body.get('interval', '1h'), body.get('source', 'demo')
+            if body.get('dataset_id'):
+                data = self.research_get('datasets', body['dataset_id'])
+                if data['pair'] != pair:
+                    raise ValueError('Cặp tiền phải khớp bộ dữ liệu CSV.')
+                candles, source = data['candles'], 'csv'
+            else:
+                candles = market(pair, interval, source, self.env)['candles']
+            payload = {**simulate(pair, candles, body.get('params', {})), 'source': source,
+                       'interval': interval if source != 'csv' else 'CSV', 'name': str(body.get('name', 'Backtest'))[:100]}
+        item_id, created = uuid.uuid4().hex, datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            db.execute('INSERT INTO research VALUES (?,?,?,?)', (item_id, kind, created, json.dumps(payload, allow_nan=False)))
+        return dict(id=item_id, created=created, **payload)
+
+    def research_delete(self, kind, item_id):
+        self.research_get(kind, item_id)
+        with self.connect() as db:
+            db.execute('DELETE FROM research WHERE kind=? AND id=?', (kind, item_id))
+
     def config(self):
         return {'providers': [{'id': p, 'model': self.env.get('TRADERAI_MODEL') if self.env.get('TRADERAI_PROVIDER') == p else DEFAULT_MODELS[p],
                                'configured': bool(self.env.get(KEY_NAMES[p])) and (p != 'openai-compatible' or bool(self.env.get('TRADERAI_BASE_URL')))} for p in DEFAULT_MODELS],
+                'strategies': STRATEGIES, 'backtest_defaults': DEFAULTS,
                 'live_configured': bool(self.env.get('TWELVE_DATA_API_KEY')), 'pairs': list(PAIRS), 'intervals': list(INTERVALS)}
 
     def history(self):
@@ -140,6 +188,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path)
         query = {k: v[0] for k, v in parse_qs(path.query).items()}
         try:
+            parts = path.path.strip('/').split('/')
+            if len(parts) in (2, 3) and parts[0] == 'api' and parts[1] in ('datasets', 'strategies', 'backtests'):
+                return self.respond(self.server.workspace.research_get(parts[1], parts[2]) if len(parts) == 3 else self.server.workspace.research_list(parts[1]))
             if path.path == '/api/health':
                 return self.respond({'status': 'ok'})
             if path.path == '/api/config':
@@ -152,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(self.server.workspace.history())
             if path.path.startswith('/api/analysis/'):
                 return self.respond(self.server.workspace.get(path.path.rsplit('/', 1)[-1]))
-            assets = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/style.css': ('style.css', 'text/css')}
+            assets = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/lab.js': ('lab.js', 'text/javascript'), '/style.css': ('style.css', 'text/css')}
             if path.path not in assets:
                 return self.respond({'error': 'Không tìm thấy tài nguyên.'}, 404)
             file, mime = assets[path.path]
@@ -177,7 +228,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             self.mutation()
-            if self.path not in ('/api/analysis', '/api/risk'):
+            if self.path not in ('/api/analysis', '/api/risk', '/api/datasets', '/api/strategies', '/api/backtests'):
                 return self.respond({'error': 'Không tìm thấy endpoint.'}, 404)
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 524288:
@@ -185,16 +236,24 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length), parse_constant=lambda x: (_ for _ in ()).throw(ValueError('Số không hợp lệ.')))
             if not isinstance(body, dict):
                 raise ValueError('Yêu cầu phải là JSON object.')
+            if self.path in ('/api/datasets', '/api/strategies', '/api/backtests'):
+                return self.respond(self.server.workspace.research_create(self.path.rsplit('/', 1)[-1], body), 201)
             if self.path == '/api/risk':
                 result = position_size(body.get('pair'), *(body.get(k) for k in ('balance', 'risk_percent', 'entry', 'stop', 'target')))
                 return self.respond(result)
             self.respond(self.server.workspace.analyze(body), 202)
+        except LookupError as exc:
+            self.respond({'error': str(exc)}, 404)
         except (ValueError, TypeError) as exc:
             self.respond({'error': str(exc) if isinstance(exc, ValueError) else 'Định dạng dữ liệu không hợp lệ.'}, 400)
 
     def do_DELETE(self):
         try:
             self.mutation()
+            parts = self.path.strip('/').split('/')
+            if len(parts) == 3 and parts[0] == 'api' and parts[1] in ('datasets', 'strategies', 'backtests'):
+                self.server.workspace.research_delete(parts[1], parts[2])
+                return self.respond({'deleted': True})
             if not self.path.startswith('/api/analysis/'):
                 return self.respond({'error': 'Không tìm thấy endpoint.'}, 404)
             run_id = self.path.rsplit('/', 1)[-1]

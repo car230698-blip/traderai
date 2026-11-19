@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:ffa42ee57966b7dbf22d5dc93312d160e05336cd9025563b4cbf1553f2158597 -->
+
 # traderai
 trade
 
@@ -118,6 +122,30 @@ node --check traderai/web/app.js  # tùy chọn, Node chỉ phục vụ kiểm t
 ```
 
 Kiểm thử dùng dữ liệu tổng hợp và mock provider, bao gồm chỉ báo, công thức lot, API, SQLite, workflow LLM forex và CLI cũ. Không cần key thật. Dữ liệu thị trường và lời gọi LLM thật cần key cùng quyền truy cập phù hợp.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+## Research Lab v0.2
+
+Nâng cấp theo hướng nghiên cứu forex: backtest hai chiến lược EMA Trend và RSI Reversion, nhập CSV OHLC, thư viện cấu hình, sổ thí nghiệm SQLite, so sánh hai kết quả, xuất JSON toàn bộ dữ liệu và CSV từng lệnh. Giao diện **Research Lab** mở từ sidebar; không cần API key với dữ liệu mô phỏng hoặc CSV.
+
+- CSV: cột `time,open,high,low,close`, từ 60–3000 nến, tối đa 450 KB; thời gian ISO 8601 tăng dần, không trùng; thiếu timezone được coi là UTC. Dữ liệu người dùng chưa được xác minh độc lập.
+- EMA Trend: tín hiệu close > EMA20 > EMA50 cho BUY, đảo chiều cho SELL. RSI Reversion: BUY khi RSI14 < 30, SELL khi RSI14 > 70. Cần 50 nến khởi tạo. Khi không có vị thế, tín hiệu hiện hữu được phép mở vị thế mới.
+- Một vị thế tại một thời điểm; tín hiệu chỉ dùng nến đã đóng, khớp ở open nến kế tiếp. Stop/target cố định theo pip và Reward/Risk. Chi phí spread + slippage khứ hồi được tính khi thoát; sizing dự trù chi phí và bị giới hạn đòn bẩy, làm tròn xuống 0.01 lot.
+- Gap qua stop khớp tại open bất lợi. Gap qua target chỉ nhận giá target. Nếu open nằm giữa hai mức nhưng high/low chạm cả hai, ưu tiên stop. Vị thế còn mở đóng tại close nến cuối. Không có swap, commission riêng, margin call hay khớp lệnh tick.
+- USD quote tính P/L trực tiếp; USD base quy đổi tại giá thoát. Equity theo close, đã trừ chi phí dự kiến của vị thế mở; drawdown theo equity close, không phải drawdown nội nến. Không tính CAGR/Sharpe trên mẫu ngắn. Profit factor hiển thị `—` nếu không có lệnh lỗ.
+- Mỗi thí nghiệm giữ dữ liệu đầu vào, SHA-256, tham số và phiên bản engine. Xóa bộ CSV không làm mất snapshot đã lưu trong backtest. 120 nến tích hợp chỉ phù hợp kiểm tra tính năng; nhập lịch sử dài hơn cho nghiên cứu. So sánh hai kết quả cần kiểm tra nguồn, thời kỳ và giả định giống nhau.
+
+CLI backtest độc lập:
+
+```sh
+python -m traderai.backtest EUR/USD --csv examples/forex-ohlc-demo.csv --strategy ema_trend --balance 10000 --risk-percent 1 --spread-pips 1.2 --slippage-pips 0.3 --output result.json
+```
+
+Tệp CSV mẫu là **dữ liệu tổng hợp**, không phải giá thật. Thêm API: `GET/POST /api/datasets`, `/api/strategies`, `/api/backtests`; `GET/DELETE /api/{collection}/{id}`. POST dataset nhận `{pair,name,csv}`; strategy nhận `{pair,name,params}`; backtest nhận `{pair,name,interval,source,dataset_id,params}`. Khi có dataset_id, bỏ qua nguồn tích hợp và cặp tiền phải khớp CSV. GET danh sách trả tối đa 100 mục, không trả mảng dữ liệu lớn; GET một backtest trả cả snapshot OHLC, đường vốn và lệnh.
+
+Kho mã dùng duy nhất nhánh `main` theo yêu cầu. GitHub Actions chạy unit tests trên Python 3.10/3.12/3.14, kiểm tra cú pháp JavaScript, cài package và cấu hình Compose khi push main. Các kiểm tra này không gọi API trả phí.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
