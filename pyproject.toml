@@ -4,14 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "traderai-framework"
-version = "0.3.0"
+version = "0.2.0"
 description = "Forex research workspace with multi-agent analysis and backtesting"
 requires-python = ">=3.10"
 dependencies = []
 
 [project.scripts]
 traderai = "traderai.cli:main"
-traderai-validate = "traderai.validation:main"
 
 [tool.setuptools.packages.find]
 include = ["traderai*"]

@@ -164,60 +164,6 @@ class APITests(unittest.TestCase):
         self.assertNotIn('private-key', json.dumps(config))
         self.assertTrue(config['providers'][0]['configured'])
 
-    def test_validation_crud_summary_and_restart_persistence(self):
-        status, result = self.request('/api/validations', {'pair': 'EUR/USD', 'name': '<research>', 'options': {'samples': 100}})
-        self.assertEqual(status, 201)
-        self.assertEqual(len(result['input_candles']), 720)
-        self.assertEqual(result['source'], 'demo')
-        self.assertEqual(result['interval'], '1h')
-        listing = self.request('/api/validations')[1][0]
-        for heavy in ('input_candles', 'holdout', 'candidates', 'bootstrap', 'cost_stress'):
-            self.assertNotIn(heavy, listing)
-        self.assertEqual(listing['assessment'], result['assessment'])
-        reopened = Workspace(self.server.workspace.db_path, {})
-        try:
-            saved = reopened.research_get('validations', result['id'])
-            self.assertEqual(saved, result)
-        finally:
-            reopened.executor.shutdown(wait=True)
-        self.assertEqual(self.request('/api/validations/'+result['id'])[1], result)
-        self.request('/api/validations/'+result['id'], method='DELETE')
-        self.assertEqual(self.request('/api/validations')[1], [])
-        with self.assertRaises(HTTPError) as error:
-            self.request('/api/validations/'+result['id'])
-        self.assertEqual(error.exception.code, 404)
-        error.exception.close()
-
-    def test_validation_csv_snapshot_and_request_guards(self):
-        from traderai.validation import demo_history
-        bars = demo_history()[:300]
-        csv = 'time,open,high,low,close\n'+'\n'.join(','.join(str(c[k]) for k in ('time','open','high','low','close')) for c in bars)
-        _, dataset = self.request('/api/datasets', {'pair': 'EUR/USD', 'csv': csv})
-        _, result = self.request('/api/validations', {'dataset_id': dataset['id'], 'options': {'samples': 100}})
-        self.assertEqual(result['source'], 'csv')
-        for body in ({'dataset_id': dataset['id'], 'pair': 'USD/JPY'}, {'source': 'live'},
-                     {'options': {'seed': -1}}, {'options': []}, {'dataset_id': [dataset['id']]}):
-            with self.subTest(body=body), self.assertRaises(HTTPError) as error:
-                self.request('/api/validations', body)
-            self.assertEqual(error.exception.code, 400)
-            error.exception.close()
-        with self.assertRaises(HTTPError) as error:
-            self.request('/api/validations', {}, origin='https://untrusted.test')
-        self.assertEqual(error.exception.code, 400)
-        error.exception.close()
-        self.server.workspace.validation_slot.acquire()
-        try:
-            with self.assertRaises(HTTPError) as error:
-                self.request('/api/validations', {})
-            self.assertEqual(error.exception.code, 400)
-            error.exception.close()
-        finally:
-            self.server.workspace.validation_slot.release()
-        self.request('/api/datasets/'+dataset['id'], method='DELETE')
-        self.assertEqual(self.request('/api/validations/'+result['id'])[1]['input_candles'], bars)
-        self.assertTrue(self.server.workspace.validation_slot.acquire(blocking=False))
-        self.server.workspace.validation_slot.release()
-
     def test_cross_origin_and_invalid_data_rejected(self):
         for path, data, origin in [('/api/analysis', {}, 'https://untrusted.test'),
                                     ('/api/analysis', {'pair':'NOT/FX'}, None),

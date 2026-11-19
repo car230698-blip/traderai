@@ -1,7 +1,5 @@
 <!-- coderabbit-ai-generated:v1 -->
 
-<!-- coderabbit-ai-generated-section:v1:3203f313f73b7719589e8466346614984fb37e830e7c9e20f4bf9ae8bdafaeb7 -->
-
 <!-- coderabbit-ai-generated-section:v1:ffa42ee57966b7dbf22d5dc93312d160e05336cd9025563b4cbf1553f2158597 -->
 
 # traderai
@@ -148,44 +146,6 @@ python -m traderai.backtest EUR/USD --csv examples/forex-ohlc-demo.csv --strateg
 Tệp CSV mẫu là **dữ liệu tổng hợp**, không phải giá thật. Thêm API: `GET/POST /api/datasets`, `/api/strategies`, `/api/backtests`; `GET/DELETE /api/{collection}/{id}`. POST dataset nhận `{pair,name,csv}`; strategy nhận `{pair,name,params}`; backtest nhận `{pair,name,interval,source,dataset_id,params}`. Khi có dataset_id, bỏ qua nguồn tích hợp và cặp tiền phải khớp CSV. GET danh sách trả tối đa 100 mục, không trả mảng dữ liệu lớn; GET một backtest trả cả snapshot OHLC, đường vốn và lệnh.
 
 Kho mã dùng duy nhất nhánh `main` theo yêu cầu. GitHub Actions chạy unit tests trên Python 3.10/3.12/3.14, kiểm tra cú pháp JavaScript, cài package và cấu hình Compose khi push main. Các kiểm tra này không gọi API trả phí.
-
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-## Validation Workbench v0.3
-
-Mở **Kiểm định** ở sidebar để đánh giá chiến lược theo thứ tự thời gian. Mục tiêu là kiểm tra độ bền của một giả thuyết nghiên cứu forex; kết quả không phải lệnh giao dịch hoặc phê duyệt của Portfolio Manager.
-
-1. Chọn lịch sử CSV từ **300–3000 nến**, hoặc mẫu **720 nến 1H tổng hợp cố định từ 2025-01-01**. Mẫu có cả cuối tuần, không phải lịch sử thị trường. Dữ liệu giá tích hợp 120 nến vẫn giữ nguyên cho dashboard/backtest và không đủ cho kiểm định.
-2. Đặt trước tỷ lệ train 50–80%, số lệnh tối thiểu, giới hạn drawdown, vốn, rủi ro, đòn bẩy và chi phí. Phần đầu là train, phần sau là holdout; không xáo trộn thời gian.
-3. Thử đúng **18 cấu hình** trên train: EMA Trend / RSI Reversion × stop 15/25/40 pip × R/R 1/1.5/2. Chọn lợi nhuận USD sau chi phí cao nhất trong nhóm đủ số lệnh và không vượt drawdown. Hòa điểm: drawdown thấp hơn, rồi strategy/stop/RR tăng dần. Không dùng chỉ số holdout để chọn tham số. Không bắt buộc lợi nhuận train dương; kết luận holdout phản ánh số liệu thực tế.
-4. Khóa cấu hình và bắt đầu tài khoản mới trên holdout, cùng vốn ban đầu, không chuyển vị thế từ train. Chỉ báo khởi tạo lại bằng **50 nến ngay trước holdout**, chỉ dùng để warmup; không mở lệnh trong các nến đó. Equity, số lệnh và exposure holdout chỉ tính trên phần đánh giá. Đây không phải cơ chế tiếp tục trạng thái chỉ báo từ toàn bộ lịch sử train.
-5. So sánh spread + slippage ở mức ×1, ×1.5, ×2 trên holdout; không chọn lại chiến lược, lot được tái tính theo cùng ngân sách rủi ro. Nếu một loại chi phí vượt giới hạn engine 100 pip, tình huống tương ứng được ghi là không khả dụng.
-6. Khi holdout có ít nhất 10 lệnh: bootstrap khối vòng tròn, độ dài khối `min(5, ceil(sqrt(số lệnh)))`, 100–1000 mẫu, seed cố định. Lấy mẫu **P/L USD cố định**, không tái tính sizing, không tính equity nội lệnh, compound hoặc margin call. Phân vị return/drawdown và tỷ lệ mẫu kết thúc lỗ chỉ mô tả phép lấy mẫu lại, không phải xác suất thị trường tương lai.
-
-Kết quả gồm bảng toàn bộ cấu hình train, kết luận theo ngưỡng holdout, đường vốn, nhật ký lệnh, kiểm tra cấu trúc dữ liệu, độ nhạy chi phí, phân phối bootstrap và lịch sử SQLite. Nếu không có cấu hình đủ điều kiện train thì không chạy holdout hoặc tạo kết quả thắng giả. Nếu holdout thiếu lệnh hoặc vượt drawdown, kết luận nêu rõ. Có thể lưu cấu hình đã chọn vào thư viện Research Lab, xuất JSON toàn bộ kết quả hoặc CSV snapshot để tái chạy. Xóa CSV gốc không làm mất snapshot của kiểm định đã lưu.
-
-Kiểm tra dữ liệu báo cáo bước thời gian trung vị, khoảng cách >1.5 lần trung vị, nến high=low, thay đổi close >3% và nến cuối tuần UTC. Không tự điền nến hoặc coi mọi gap là mất dữ liệu; chưa đối chiếu lịch phiên, ngày nghỉ hay tính xác thực của nhà cung cấp.
-
-### CLI kiểm định
-
-```sh
-python -m traderai.validation EUR/USD --demo --output validation.json
-python -m traderai.validation EUR/USD --csv history.csv --train-percent 70 --min-trades 3 --max-drawdown 20 --balance 10000 --risk-percent 1 --spread-pips 1.2 --slippage-pips 0.3 --leverage 10 --samples 500 --seed 42 --output validation.json
-# Sau khi pip install .:
-traderai-validate EUR/USD --demo --output validation.json
-```
-
-### API kiểm định
-
-- `GET/POST /api/validations`, `GET/DELETE /api/validations/{id}`.
-- POST nhận `{pair,name,dataset_id,source,params,options}`. Không có dataset_id thì chỉ hỗ trợ `source: demo` với mẫu cố định 720 nến. Có dataset_id thì dùng CSV, cặp tiền phải khớp bộ dữ liệu.
-- `params`: `balance`, `risk_percent`, `leverage`, `spread_pips`, `slippage_pips`. Engine còn nhận strategy/stop/RR nhưng quy trình kiểm định luôn ghi đè ba trường này bằng lưới cố định.
-- `options`: `train_percent` (số nguyên 50–80), `min_trades` (1–50), `max_drawdown` (1–100), `samples` (100–1000), `seed` (0–4294967295). Mặc định 70 / 3 / 20 / 500 / 42.
-- HTTP 201 khi lưu hoàn tất; tối đa một kiểm định chạy cùng lúc trên process; yêu cầu thứ hai nhận HTTP 400 và thông báo chờ. Phân tích agent vẫn chạy trong pool riêng. Chạy đồng bộ, giới hạn 3000 nến và 18 cấu hình để giới hạn tài nguyên.
-- GET danh sách tối đa 100 mục, bỏ các mảng nặng; GET từng mục trả đủ snapshot, SHA-256 toàn dữ liệu và train, phiên bản engine, lựa chọn và giả định. `/api/config` bổ sung `validation_defaults` và `validation_grid`.
-
-Giữ nguyên engine khớp lệnh v1.0 và API/CLI v0.2. Chưa có walk-forward nhiều cửa sổ, dữ liệu tick, broker execution, swap, commission riêng hoặc margin call. Tối ưu và xem lại cùng holdout nhiều lần sẽ làm mất tính độc lập; cần giai đoạn dữ liệu mới trước khi đưa ra kết luận nghiên cứu tiếp theo.
 
 
 <!-- /coderabbit-ai-generated:v1 -->
