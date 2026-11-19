@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traderai-framework"
+version = "0.1.0"
+description = "A command-line multi-agent trading research framework"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+traderai = "traderai.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["traderai*"]
+
+[tool.setuptools.package-data]
+traderai = ["web/*.html", "web/*.css", "web/*.js"]

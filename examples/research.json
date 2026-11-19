@@ -1,0 +1,30 @@
+{
+  "ticker": "EXAMPLE",
+  "as_of": "2025-01-01",
+  "fundamentals": {
+    "note": "Synthetic example data; replace with current, sourced financials.",
+    "annual_revenue_usd": 1200000000,
+    "revenue_growth_percent": 8,
+    "operating_margin_percent": 15,
+    "net_debt_usd": 200000000,
+    "price_to_earnings": 22
+  },
+  "sentiment": {
+    "source": "synthetic social media sample",
+    "period": "2024-12-01 to 2024-12-31",
+    "posts_sampled": 100,
+    "positive_percent": 55,
+    "negative_percent": 30,
+    "neutral_percent": 15
+  },
+  "technical": {
+    "currency": "USD",
+    "daily_closes": [95, 97, 96, 99, 101, 100, 102],
+    "note": "Synthetic closes, oldest to newest; insufficient for many indicators."
+  },
+  "news": [
+    {"date": "2024-12-15", "source": "synthetic example", "headline": "Interest rates remain unchanged"}
+  ],
+  "portfolio": {"cash_usd": 10000, "positions": []},
+  "risk_constraints": {"max_position_percent": 5, "max_loss_per_trade_percent": 1}
+}

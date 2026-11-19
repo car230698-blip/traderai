@@ -1,0 +1,12 @@
+{
+  "ticker": "EUR/USD",
+  "asset_class": "forex",
+  "language": "Vietnamese",
+  "as_of": "2026-01-01",
+  "fundamentals": {"note": "Replace with sourced ECB and Fed policy, inflation and growth data."},
+  "sentiment": null,
+  "news": [],
+  "technical": {"note": "No price data supplied. Do not infer a signal."},
+  "portfolio": {"account_currency": "USD", "cash": 10000, "positions": []},
+  "risk_constraints": {"max_risk_per_trade_percent": 1}
+}
